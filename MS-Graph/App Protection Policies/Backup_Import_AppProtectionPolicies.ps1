@@ -23,146 +23,78 @@ param(
     $ImportJSON
 )#
 
-function Get-AuthToken {
-    <#
-    .SYNOPSIS
-    This function is used to authenticate with the Graph API REST interface
-    .DESCRIPTION
-    The function authenticate with the Graph API Interface with the tenant name
-    .EXAMPLE
-    Get-AuthToken
-    Authenticates you with the Graph API interface
-    .NOTES
-    NAME: Get-AuthToken
-    #>
+FUNCTION Connect-AzAD_Token {
+    Write-Host -ForegroundColor Cyan "Checking for AzureAD module..."
+    $AADMod = Get-Module -Name "AzureAD" -ListAvailable
 
-    [cmdletbinding()]
-
-    param
-    (
-        [Parameter(Mandatory=$true)]
-        $User
-    )
-
-    $userUpn = New-Object "System.Net.Mail.MailAddress" -ArgumentList $User
-
-    $tenant = $userUpn.Host
-
-    Write-Host "Checking for AzureAD module..."
-
-        $AadModule = Get-Module -Name "AzureAD" -ListAvailable
-
-        if ($AadModule -eq $null) {
-
-            Write-Host "AzureAD PowerShell module not found, looking for AzureADPreview"
-            $AadModule = Get-Module -Name "AzureADPreview" -ListAvailable
-
+    if (!($AADMod)) {
+        Write-Host -ForegroundColor Yellow "AzureAD PowerShell module not found, looking for AzureADPreview"
+        $AADModPrev = Get-Module -Name "AzureADPreview" -ListAvailable
+        #Check to see if the AzureAD Preview Module is insalled, If so se that as the AAD Module Else Insall the AzureAD Module
+        IF ($AADModPrev) {
+            $AADMod = Get-Module -Name "AzureADPreview" -ListAvailable
+        } else {
+            try {
+                Write-Host -ForegroundColor Yello "AzureAD Preview is not installed..."
+                Write-Host -ForegroundColor Cyan "Attempting to Install the AzureAD Powershell module..."
+                Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -ErrorAction Stop | Out-Null
+                Install-Module AzureAD -Force -ErrorAction Stop
+            }
+            catch {
+                Write-Host -ForegroundColor Red "Failed to install the AzureAD PowerShell Module `n $($Error[0])"
+                break 
+            }
+           
         }
 
-        if ($AadModule -eq $null) {
-            write-host
-            write-host "AzureAD Powershell module not installed..." -f Red
-            write-host "Install by running 'Install-Module AzureAD' or 'Install-Module AzureADPreview' from an elevated PowerShell prompt" -f Yellow
-            write-host "Script can't continue..." -f Red
-            write-host
-            exit
-        }
+    } else {
+        Write-Host -ForegroundColor Green "AzureAD Powershell Module Found"
+    }
 
-    # Getting path to ActiveDirectory Assemblies
-    # If the module count is greater than 1 find the latest version
+    $AADMod = ($AADMod | Select-Object -Unique | Sort-Object)[-1]
+    
+    $ADAL = Join-Path $AADMod.ModuleBase "Microsoft.IdentityModel.Clients.ActiveDirectory.dll"
+    $ADALForms = Join-Path $AADMod.ModuleBase "Microsoft.IdentityModel.Clients.ActiveDirectory.Platform.dll"
+    [System.Reflection.Assembly]::LoadFrom($ADAL) | Out-Null
+    [System.Reflection.Assembly]::LoadFrom($ADALForms) | Out-Null
 
-        if($AadModule.count -gt 1){
+    $UserInfo = Connect-AzureAD
 
-            $Latest_Version = ($AadModule | select version | Sort-Object)[-1]
+    # Microsoft Intune PowerShell Enterprise Application ID 
+    $MIPEAClientID = "d1ddf0e4-d672-4dae-b554-9d5bdfd93547"
+    # The redirectURI
+    $RedirectURI = "urn:ietf:wg:oauth:2.0:oob"
+    #The Authority to connect with (YOur Tenant)
+    Write-Host -Foregroundcolor Cyan "Connected to Tenant: $($UserInfo.TenantID)"
+    $Auth = "https://login.microsoftonline.com/$($UserInfo.TenantID)"
 
-            $aadModule = $AadModule | ? { $_.version -eq $Latest_Version.version }
-
-                # Checking if there are multiple versions of the same module found
-
-                if($AadModule.count -gt 1){
-
-                $aadModule = $AadModule | select -Unique
-
-                }
-
-            $adal = Join-Path $AadModule.ModuleBase "Microsoft.IdentityModel.Clients.ActiveDirectory.dll"
-            $adalforms = Join-Path $AadModule.ModuleBase "Microsoft.IdentityModel.Clients.ActiveDirectory.Platform.dll"
-
-        }
-
-        else {
-
-            $adal = Join-Path $AadModule.ModuleBase "Microsoft.IdentityModel.Clients.ActiveDirectory.dll"
-            $adalforms = Join-Path $AadModule.ModuleBase "Microsoft.IdentityModel.Clients.ActiveDirectory.Platform.dll"
-
-        }
-
-    [System.Reflection.Assembly]::LoadFrom($adal) | Out-Null
-
-    [System.Reflection.Assembly]::LoadFrom($adalforms) | Out-Null
-
-    $clientId = "d1ddf0e4-d672-4dae-b554-9d5bdfd93547"
-
-    $redirectUri = "urn:ietf:wg:oauth:2.0:oob"
-
-    $resourceAppIdURI = "https://graph.microsoft.com"
-
-    $authority = "https://login.microsoftonline.com/$Tenant"
-
-        try {
-
-        $authContext = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.AuthenticationContext" -ArgumentList $authority
-
+    try {
+        $AuthContext = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.AuthenticationContext" -ArgumentList $Auth
+        
         # https://msdn.microsoft.com/en-us/library/azure/microsoft.identitymodel.clients.activedirectory.promptbehavior.aspx
         # Change the prompt behaviour to force credentials each time: Auto, Always, Never, RefreshSession
-
         $platformParameters = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.PlatformParameters" -ArgumentList "Auto"
-
-        $userId = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.UserIdentifier" -ArgumentList ($User, "OptionalDisplayableId")
-
-        $authResult = $authContext.AcquireTokenAsync($resourceAppIdURI,$clientId,$redirectUri,$platformParameters,$userId).Result
-
-            # If the accesstoken is valid then create the authentication header
-
-            if($authResult.AccessToken){
-
+        $userId = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.UserIdentifier" -ArgumentList ($UserInfo.Account, "OptionalDisplayableId")
+        $authResult = $AuthContext.AcquireTokenAsync(("https://" + $MSGraphHost),$MIPEAClientID,$RedirectURI,$platformParameters,$userId).Result
+        # If the accesstoken is valid then create the authentication header
+        if($authResult.AccessToken){
             # Creating header for Authorization token
-
-            $authHeader = @{
-                'Content-Type'='application/json'
-                'Authorization'= $authResult.AccessToken
-                'ExpiresOn'=$authResult.ExpCoiresOn
-                }
-
-            return $authHeader
-
-            }
-
-            else {
-
-            Write-Host
-            Write-Host "Authorization Access Token is null, please re-run authentication..." -ForegroundColor Red
-            Write-Host
+            $AADAccessToken = $authResult.AccessToken
+            return $AADAccessToken
+        } else {
+            Write-Host -ForegroundColor Red "Authorization Access Token is null, please re-run authentication..."
             break
-
-            }
-
         }
-
-        catch {
-
-        write-host $_.Exception.Message -f Red
-        write-host $_.Exception.ItemName -f Red
-        write-host
+    }
+    catch {
+        Write-Host -ForegroundColor Red $_.Exception.Message
+        Write-Host -ForegroundColor Red $_.Exception.ItemName
         break
-
-        }
-
+    }
 }
 
 # Web page used to help with getting the access token 
 #https://morgantechspace.com/2019/08/get-graph-api-access-token-using-client-id-and-client-secret.html 
-
 
 if (($ClientID) -and ($ClientSecret) -and ($TenantId) ) {
     #Create the body of the Authentication of the request for the OAuth Token
@@ -172,9 +104,7 @@ if (($ClientID) -and ($ClientSecret) -and ($TenantId) ) {
     #Set your access token as a variable
     $global:AccessToken = $OAuthReq.access_token
 } else {
-    $AADLogin = Connect-AzureAD
-    $global:AccessToken = (Get-AuthToken -User $AADLogin.Account).Authorization
-    Write-Host "Connected to tenant $($graph.TenantId)"
+    $global:AccessToken = Connect-AzAD_Token
 }
 
 IF (!($Import)) {
@@ -189,7 +119,6 @@ IF (!($Import)) {
             $Error[0]
             break
         }
-        
     }
 
     Invoke-RestMethod -Method GET -Uri "https://$MSGraphHost/$MsGraphVersion/deviceAppManagement/managedAppPolicies" -Headers @{Authorization = "Bearer $AccessToken"} | Select-Object -ExpandProperty "Value" | %{
