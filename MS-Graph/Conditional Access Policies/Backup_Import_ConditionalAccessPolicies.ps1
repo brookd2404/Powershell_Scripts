@@ -5,6 +5,9 @@ param(
     [Parameter(DontShow = $true)]
     [string]
     $MsGraphHost = "graph.microsoft.com",
+    #The AzureAD ClientID (Application ID) of your registered AzureAD App with Delegate permissions
+    [string]
+    $DelegateClientID,
     #The AzureAD ClientID (Application ID) of your registered AzureAD App
     [string]
     $ClientID,
@@ -24,7 +27,7 @@ param(
 
 )#
 
-FUNCTION Connect-AzAD_Token {
+FUNCTION Connect-AzAD_Token ($DelegateID){
     Write-Host -ForegroundColor Cyan "Checking for AzureAD module..."
     $AADMod = Get-Module -Name "AzureAD" -ListAvailable
 
@@ -61,8 +64,8 @@ FUNCTION Connect-AzAD_Token {
 
     $UserInfo = Connect-AzureAD
 
-    # Microsoft Intune PowerShell Enterprise Application ID 
-    $MIPEAClientID = "d1ddf0e4-d672-4dae-b554-9d5bdfd93547"
+    # Your Azure Application ID 
+    $MIPEAClientID = $DelegateID
     # The redirectURI
     $RedirectURI = "urn:ietf:wg:oauth:2.0:oob"
     #The Authority to connect with (YOur Tenant)
@@ -105,7 +108,12 @@ if (($ClientID) -and ($ClientSecret) -and ($TenantId) ) {
     #Set your access token as a variable
     $global:AccessToken = $OAuthReq.access_token
 } else {
-    $global:AccessToken = Connect-AzAD_Token
+    if (!($DelegateClientID))
+    {
+        Write-Host -ForegroundColor Red "You must specify a clientID which has the correct delegate permissions and URI Re-write configuration "
+        break
+    }
+    $global:AccessToken = Connect-AzAD_Token -DelegateID $DelegateClientID
 }
 
 IF (!($Import)) {
@@ -123,17 +131,11 @@ IF (!($Import)) {
         
     }
 
-    Invoke-RestMethod -Method GET -Uri "https://$MSGraphHost/$MsGraphVersion/identity/conditionalAccess/policies" -Headers @{Authorization = "Bearer $AccessToken"} | Select-Object -ExpandProperty "Value" | %{
-       $_ | ConvertTo-Json | Out-File "$FormattedOutputFolder\$($_.displayname).json"
+    Invoke-RestMethod -Method GET -Uri "https://$MSGraphHost/$MsGraphVersion/identity/conditionalAccess/policies" -Headers @{Authorization = "Bearer $AccessToken"} -ContentType "application/json" | Select-Object -ExpandProperty "Value" | %{
+       $_ | ConvertTo-Json -Depth 10 | Out-File "$FormattedOutputFolder\$($_.displayname).json"
     } 
 }elseif ($Import) {
-    $JSON = Get-Content $ImportJSON | ConvertFrom-Json | Select-Object -Property * -ExcludeProperty Version,LastModifiedTime,CreatedDateTime,id | ConvertTo-Json
-    $Context = '{
-    "@odata.context":  "https://graph.microsoft.com/beta/$metadata#identity/conditionalAccess/policies",
-    "roleScopeTagIds":  [
-                            "0"
-                        ],'
-    
-    $Json = $Context + $Json.TrimStart("{")
-    Invoke-RestMethod -Method POST -Uri "https://$MSGraphHost/$MsGraphVersion/deviceManagement/deviceCompliancePolicies" -Headers @{Authorization = "Bearer $AccessToken"} -Body $JSON -ContentType "application/json"    
+    $JSON = Get-Content $ImportJSON | ConvertFrom-Json | Select-Object -Property * -ExcludeProperty Version,modifiedDateTime,CreatedDateTime,id,sessionControls | ConvertTo-Json -Depth 10
+  
+    Invoke-RestMethod -Method POST -Uri "https://$MSGraphHost/$MsGraphVersion/identity/conditionalAccess/policies" -Headers @{Authorization = "Bearer $AccessToken"} -Body $JSON -ContentType "application/json"    
 }
