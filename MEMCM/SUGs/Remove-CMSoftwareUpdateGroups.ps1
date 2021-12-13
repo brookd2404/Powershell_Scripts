@@ -1,9 +1,12 @@
-Param
-(
-$SiteCode,
-$ProviderMachineName,
-$DisplayNameFilter,
-$LogOutputLocation
+Param (
+    [String]
+    $SiteCode,
+    [String]
+    $ProviderMachineName,
+    [String]
+    $DisplayNameFilter = "Windows Server 2019",
+    [String]
+    $LogOutputLocation = "C:\Temp"
 )
 
 # Import the ConfigurationManager.psd1 module 
@@ -24,9 +27,8 @@ Write-Warning "Getting Software Update Groups, This may take a while..."
 $sugs = Get-CMSoftwareUpdateGroup 
 
 #Filter the Sugs where displayname like a value and Month created was not the current month
-$SugFilter = ($sugs | Where-Object {($_.LocalizedDisplayName -like ($DisplayNameFilter + "*")) -and ($_.DateCreated.ToString('MM-yyyy') -notmatch "$(Get-Date -Format MM-yyyy)")} | Sort-Object -Descending DateCreated)
-#Set the latest SUG (excluding the current month) to merge the other SUGs Into
-$SugDec = $sugfilter[0]
+$lastestSUG,$SugFilter = ($sugs | Where-Object {($_.LocalizedDisplayName -like ($DisplayNameFilter + "*")) -and ($_.DateCreated.ToString('MM-yyyy') -notmatch "$(Get-Date -Format MM-yyyy)")} | Sort-Object -Descending DateCreated)
+
 #Disable the Fast Method Not used Check for the commands below
 $CMPSSuppressFastNotUsedCheck = $true
 
@@ -34,7 +36,7 @@ $CMPSSuppressFastNotUsedCheck = $true
 $ExportInfo = @()
 
 #forEach SUG in the Filtered SUG List (Excluding the one you are using to merge into), Process the following
-ForEach ($SUG in ($sugfilter | Where-Object {$_.LocalizedDisplayName -notmatch $SugDec.LocalizedDisplayName}))
+ForEach ($SUG in $sugfilter)
 {
     try {
         Write-host "Processing Software Update Group" $($SUG.LocalizedDisplayName)
