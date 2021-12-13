@@ -1,6 +1,6 @@
 Param (
     [String]
-    $SiteCode =,
+    $SiteCode,
     [String]
     $ProviderMachineName,
     [String]
@@ -13,12 +13,12 @@ Param (
 )
 
 # Import the ConfigurationManager.psd1 module 
-if((Get-Module ConfigurationManager) -eq $null) {
+if(-not(Get-Module ConfigurationManager)) {
     Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"
 }
 
 # Connect to the site's drive if it is not already present
-if((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue) -eq $null) {
+if(-not(Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue)) {
     New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName 
 }
 
