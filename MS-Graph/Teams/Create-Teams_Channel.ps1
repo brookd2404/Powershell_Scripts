@@ -6,11 +6,10 @@ param (
     # Teams Channel Name
     [Parameter(Mandatory = $true)]
     [String]
-    $ChannelName
+    $TeamName
 )
 
 #TeamsAdmin and Groups admin Required
-
 
 FOREACH ($Module in $ModuleNames) {
     IF (!(Get-Module -ListAvailable -Name $Module)) {
@@ -29,7 +28,7 @@ FOREACH ($Module in $ModuleNames) {
 $params = @{
 	"Template@odata.bind" = "https://graph.microsoft.com/beta/teamsTemplates('standard')"
 	Visibility = "Private"
-	DisplayName = $ChannelName
+	DisplayName = $TeamName
 	Description = "This Teams Channel will be used for collaboration."
 	Channels = @(
 		@{
