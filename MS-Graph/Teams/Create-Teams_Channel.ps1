@@ -88,6 +88,8 @@ $params = @{
 	)
 }
 
+Connect-MgGraph
+
 $Team = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/beta/teams" -Body $params -Method POST -OutputType HttpResponseMessage
 
 #Wait while the team is created, this below link tracks the job. 
