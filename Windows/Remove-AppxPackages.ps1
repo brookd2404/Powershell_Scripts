@@ -8,13 +8,18 @@ $AppsList = "Microsoft.SkypeApp", # Get Skype
 "Microsoft.XboxGameOverlay", # Microsoft Xbox Game Overlay
 "Microsoft.XboxSpeechToTextOverlay", # Xbox Speech to Text
 "Microsoft.XboxIdentityProvider", # Microsoft Xbox Identity Provider
+"Microsoft.XboxGameCallableUI", #Xbox App W11 
 "Microsoft.WindowsFeedbackHub", # Feedback App
 "Microsoft.StorePurchaseApp", # Microsoft Store Purchase
 "Microsoft.GetHelp", # Get Help
 "Microsoft.Wallet",
 "Microsoft.YourPhone",
 "Microsoft.OneConnect",
-"Microsoft.GetStarted" # Microsoft Pay
+"Microsoft.GetStarted",
+"Clipchamp.Clipchamp", # Windows 11, ClipChamp Video Editor
+"Microsoft.BingNews", # Bing News
+"Microsoft.Getstarted", # Getting Started
+"Microsoft.MicrosoftSolitaireCollection"
 
 # Work through list
 
