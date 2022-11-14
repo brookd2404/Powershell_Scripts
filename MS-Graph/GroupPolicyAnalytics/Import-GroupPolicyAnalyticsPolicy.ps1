@@ -1,6 +1,6 @@
 <#PSScriptInfo
  
-.VERSION 1.0
+.VERSION 1.1
  
 .AUTHOR David Brook
  
@@ -59,7 +59,9 @@ param (
     [String]
     $LogOutputLocation = "C:\Temp",
     [string]
-    $TenantID
+    $TenantID,
+    [switch]
+    $UseDeviceAuthentication
 )
 
 #For Each Module in the ModuleNames Array, Attempt to install them
@@ -90,9 +92,8 @@ Select-MgProfile -Name Beta
 $connectParams = @{
     Scopes = "DeviceManagementConfiguration.ReadWrite.All"
 }
-IF ($TenantID){
-    $connectParams.Add("TenantID", $TenantID)
-}
+IF ($TenantID){$connectParams.Add("TenantID", $TenantID)} #Add the TenantID if Specified
+IF ($UseDeviceAuthentication){$connectParams.Add("UseDeviceAuthentication", $true)} #Add the ability to use Device Auth
 Connect-MgGraph @connectParams
 #Current Group Policies
 $curGPAs = Get-MgDeviceManagementGroupPolicyMigrationReport -All
