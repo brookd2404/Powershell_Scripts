@@ -57,7 +57,9 @@ param (
     [Switch]
     $Resurce,
     [String]
-    $LogOutputLocation = "C:\Temp"
+    $LogOutputLocation = "C:\Temp",
+    [string]
+    $TenantID
 )
 
 #For Each Module in the ModuleNames Array, Attempt to install them
@@ -84,7 +86,14 @@ Import-Module Microsoft.Graph.DeviceManagement
 #Set the Microsoft Graph Profile to Beta... because that's what Production runs on.
 Select-MgProfile -Name Beta
 #Connect to the Microsoft Graph with the required scope
-Connect-MgGraph 
+
+$connectParams = @{
+    Scopes = "DeviceManagementConfiguration.ReadWrite.All"
+}
+IF ($TenantID){
+    $connectParams.Add("TenantID", $TenantID)
+}
+Connect-MgGraph @connectParams
 #Current Group Policies
 $curGPAs = Get-MgDeviceManagementGroupPolicyMigrationReport -All
 
@@ -104,22 +113,24 @@ FOREACH ($gpoFile in $gpoFiles) {
     $dInfo | Add-Member -MemberType NoteProperty -Name "Timestamp" -Value ((Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
     $dInfo | Add-Member -MemberType NoteProperty -Name "GPOName" -Value $xmlContent.GPO.Name
     switch ($xmlContent) {
-        { -NOT($curGPAs.DisplayName -contains $PSItem.GPO.Name) } {
+        { (-NOT($curGPAs.DisplayName -contains $PSItem.GPO.Name)) -and (-Not([String]::IsNullOrEmpty($PSItem.GPO.Name))) } {
             $dInfo | Add-Member -MemberType NoteProperty -Name "CurrentlyExists" -Value $False
-            Write-Output "$($PSItem.GPO.Name) needs to be imported"
             try {
                 $params = @{
                     GroupPolicyObjectFile = @{
                         OuDistinguishedName = $PSItem.GPO.Name
-                        Content             = [Convert]::ToBase64String((Get-Content -Path $gpoFile.FullName -Raw -Encoding Byte))
+                        Content             = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes((Get-Content $gpoFile.FullName -Raw)))
                     }
                 }
             
                 New-MgDeviceManagementGroupPolicyMigrationReport -BodyParameter $params
                 $dInfo | Add-Member -MemberType NoteProperty -Name "ImportState" -Value "Success"
+                Write-Output "$($PSItem.GPO.Name) imported"
             }
             catch {
                 $dInfo | Add-Member -MemberType NoteProperty -Name "ImportState" -Value "Error"
+                Write-Output "$($PSItem.GPO.Name) failed to be imported"
+                $Error[0]
             }
         }
         default {
