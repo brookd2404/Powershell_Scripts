@@ -12,6 +12,7 @@
  
 .RELEASENOTES
 Version 1.0: Original published version.
+Version 1.1: Made parameters mandatory where required.
  
 #>
 
