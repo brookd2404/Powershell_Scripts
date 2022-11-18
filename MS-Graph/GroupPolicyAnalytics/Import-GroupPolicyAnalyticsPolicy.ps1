@@ -42,6 +42,14 @@ e.g: D:\Source\GPOs
 This parameter allows you to do recursive folders
 Default: false
 
+.PARAMETER TenantID
+This parameter allows you to specify the Azure TenantID
+Default: null
+
+.PARAMETER UseDeviceAuthentication
+This parameter offers the ability to use device authentication.
+Default: false
+
 .EXAMPLE
 .\Import-GroupPolicyAnalyticsPolicy.ps1 -LogOutputLocation "D:\Source\Logs" -GPOFolder "D:\Source\GPOs"
 
