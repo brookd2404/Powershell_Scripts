@@ -12,6 +12,7 @@
  
 .RELEASENOTES
 Version 1.0: Original published version.
+Version 1.1: Made parameters mandatory where required.
  
 #>
 
@@ -39,6 +40,14 @@ e.g: D:\Source\GPOs
 
 .PARAMETER Recurse
 This parameter allows you to do recursive folders
+Default: false
+
+.PARAMETER TenantID
+This parameter allows you to specify the Azure TenantID
+Default: null
+
+.PARAMETER UseDeviceAuthentication
+This parameter offers the ability to use device authentication.
 Default: false
 
 .EXAMPLE
