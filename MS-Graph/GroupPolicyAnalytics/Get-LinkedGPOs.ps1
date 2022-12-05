@@ -12,7 +12,7 @@ e.g: D:\Source\GPOs
 
 .PARAMETER OU
 This parameter is used to specify the target OU
-Default: false
+Default: null
 
 .EXAMPLE
 .\Get-LinkedGPOs.ps1 -GPOFolder "D:\Source\GPOs" -OU "OU=Managed_Devices,DC=EUC365,DC=LAB"
