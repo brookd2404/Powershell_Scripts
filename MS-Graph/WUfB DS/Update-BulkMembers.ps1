@@ -45,7 +45,7 @@ for ($i = 0; $i -lt $GroupMemberIDs.Count; $i += 200) {
 
 #Get the Update Audience
 $updateAudienceMembers = Invoke-GetRequest `
-    -Uri "https://graph.microsoft.com/beta/admin/windows/updates/deploymentAudiences('$updateAudienceID')/members" -All
+    -Uri "https://graph.microsoft.com/beta/admin/windows/updates/deploymentAudiences('$audienceId')/members" -All
 
 #For each chunk of devices, enrol and add them to an audience 
 foreach ($chunk in $chunks) {
@@ -93,7 +93,7 @@ foreach ($chunk in $chunks) {
     #Post Audience Members
     Invoke-MgGraphRequest `
         -Method POST `
-        -Uri "https://graph.microsoft.com/beta/admin/windows/updates/deploymentAudiences('$($policyAudienceMap[$group])')/updateAudience" `
+        -Uri "https://graph.microsoft.com/beta/admin/windows/updates/deploymentAudiences('$audienceId')/updateAudience" `
         -Body ( $audienceParamBody | ConvertTo-Json -Depth 5)
 
 }
