@@ -26,6 +26,7 @@ FOREACH ($Module in $ModuleNames) {
 
 #Connect to Required Modules
 Connect-MgGraph -Scopes "Group.Read.All", "WindowsUpdates.ReadWrite.All" -ContextScope CurrentUser 
+Select-MgProfile beta
 Connect-AzureAD
 
 #Get Group Members IDs
