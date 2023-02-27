@@ -33,11 +33,11 @@ Connect-AzureAD
 $GroupMemberIDs = (Get-MgGroupMember -GroupId $aadGroupID -All).id
 "$aadgroupID $($GroupMemberIDs.Count) members"
 
-#Break the id's into chunks of 200
+#Break the id's into chunks of 2000
 $chunks = [System.Collections.ArrayList]::new()
-for ($i = 0; $i -lt $GroupMemberIDs.Count; $i += 200) {
-    if (($GroupMemberIDs.Count - $i) -gt 199  ) {
-        $chunks.add($GroupMemberIDs[$i..($i + 199)])
+for ($i = 0; $i -lt $GroupMemberIDs.Count; $i += 2000) {
+    if (($GroupMemberIDs.Count - $i) -gt 1999  ) {
+        $chunks.add($GroupMemberIDs[$i..($i + 1999)])
     }
     else {
         $chunks.add($GroupMemberIDs[$i..($GroupMemberIDs.Count - 1)])
