@@ -15,11 +15,11 @@ $AppsList = "Microsoft.SkypeApp", # Get Skype
 "Microsoft.Wallet",
 "Microsoft.YourPhone",
 "Microsoft.OneConnect",
-"Microsoft.GetStarted",
 "Clipchamp.Clipchamp", # Windows 11, ClipChamp Video Editor
 "Microsoft.BingNews", # Bing News
 "Microsoft.Getstarted", # Getting Started
-"Microsoft.MicrosoftSolitaireCollection"
+"Microsoft.MicrosoftSolitaireCollection",
+"MicrosoftCorporationII.MicrosoftFamily" #Family App
 
 # Work through list
 
