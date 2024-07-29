@@ -18,6 +18,11 @@ switch ($Action)
 {
     Install
     {
+
+        if (-not(Test-Path -Path $tempSPPath)) {
+            New-Item -Path $tempSPPath -ItemType Directory | Out-Null
+        }
+        
         $installerPath = Join-Path -Path $tempSPPath -ChildPath "HP-CMSL.exe"
 
         $webClient = New-Object System.Net.WebClient
