@@ -1,31 +1,32 @@
   
 <#PSScriptInfo
  
-.VERSION 2.0
- 
-.AUTHOR David Brook
- 
-.COMPANYNAME EUC365
- 
-.COPYRIGHT
- 
-.TAGS Autopilot; Intune; Mobile Device Management
- 
-.LICENSEURI
- 
-.PROJECTURI 
- 
-.ICONURI
- 
-.EXTERNALMODULEDEPENDENCIES
- 
-.REQUIREDSCRIPTS
- 
-.EXTERNALSCRIPTDEPENDENCIES
- 
-.RELEASENOTES
-Version 2.0: Added the ability to make the script accept command line arguments for just the Hash and also allow Group Tags
-Version 1.0: Original published version.
+    .VERSION 3.0
+    
+    .AUTHOR David Brook
+    
+    .COMPANYNAME EUC365
+    
+    .COPYRIGHT
+    
+    .TAGS Autopilot; Intune; Mobile Device Management
+    
+    .LICENSEURI
+    
+    .PROJECTURI 
+    
+    .ICONURI
+    
+    .EXTERNALMODULEDEPENDENCIES
+    
+    .REQUIREDSCRIPTS
+    
+    .EXTERNALSCRIPTDEPENDENCIES
+    
+    .RELEASENOTES
+    Version 3.0: Added a check for device registration before attempting to import the device, the script will also update the group tag if a new one is specified.
+    Version 2.0: Added the ability to make the script accept command line arguments for just the Hash and also allow Group Tags
+    Version 1.0: Original published version.
  
 #>
 
@@ -99,8 +100,7 @@ param(
     $GroupTag
 )
 
-Begin
-{
+Begin {
     FUNCTION Connect-AzAD_Token {
         Write-Host -ForegroundColor Cyan "Checking for AzureAD module..."
         $AADMod = Get-Module -Name "AzureAD" -ListAvailable
@@ -111,7 +111,8 @@ Begin
             #Check to see if the AzureAD Preview Module is insalled, If so se that as the AAD Module Else Insall the AzureAD Module
             IF ($AADModPrev) {
                 $AADMod = Get-Module -Name "AzureADPreview" -ListAvailable
-            } else {
+            }
+            else {
                 try {
                     Write-Host -ForegroundColor Yello "AzureAD Preview is not installed..."
                     Write-Host -ForegroundColor Cyan "Attempting to Install the AzureAD Powershell module..."
@@ -125,7 +126,8 @@ Begin
                
             }
     
-        } else {
+        }
+        else {
             Write-Host -ForegroundColor Green "AzureAD Powershell Module Found"
         }
     
@@ -153,13 +155,14 @@ Begin
             # Change the prompt behaviour to force credentials each time: Auto, Always, Never, RefreshSession
             $platformParameters = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.PlatformParameters" -ArgumentList "Auto"
             $userId = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.UserIdentifier" -ArgumentList ($UserInfo.Account, "OptionalDisplayableId")
-            $authResult = $AuthContext.AcquireTokenAsync(("https://" + $MSGraphHost),$MIPEAClientID,$RedirectURI,$platformParameters,$userId).Result
+            $authResult = $AuthContext.AcquireTokenAsync(("https://" + $MSGraphHost), $MIPEAClientID, $RedirectURI, $platformParameters, $userId).Result
             # If the accesstoken is valid then create the authentication header
-            if($authResult.AccessToken){
+            if ($authResult.AccessToken) {
                 # Creating header for Authorization token
                 $AADAccessToken = $authResult.AccessToken
                 return $AADAccessToken
-            } else {
+            }
+            else {
                 Write-Host -ForegroundColor Red "Authorization Access Token is null, please re-run authentication..."
                 break
             }
@@ -173,53 +176,88 @@ Begin
             
     if (($ClientID) -and ($ClientSecret) -and ($TenantId) ) {
         #Create the body of the Authentication of the request for the OAuth Token
-        $Body = @{client_id=$ClientID;client_secret=$ClientSecret;grant_type="client_credentials";scope="https://$MSGraphHost/.default";}
+        $Body = @{client_id = $ClientID; client_secret = $ClientSecret; grant_type = "client_credentials"; scope = "https://$MSGraphHost/.default"; }
         #Get the OAuth Token 
         $OAuthReq = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" -Body $Body
         #Set your access token as a variable
         $global:AccessToken = $OAuthReq.access_token
-    } else {
+    }
+    else {
         $global:AccessToken = Connect-AzAD_Token
     }
 }
-Process
-{
-    if(!$Hash) {
-        $session = New-CimSession
+Process {
+    $PostData = @{} #A blank hash table to store the data to be posted
+    $session = New-CimSession 
+    $serial = (Get-CimInstance -CimSession $session -Class Win32_BIOS).SerialNumber #Get the serial number of the device
+    Write-Verbose "Checking if Device with serail number $serial is already registered"
+    $apDeviceIdentatiesPost = (Invoke-RestMethod -Method GET -Uri "https://$MSGraphHost/$MsGraphVersion/devicemanagement/windowsAutopilotDeviceIdentities?`$filter=contains(serialNumber,'$serial')" `
+            -Headers @{Authorization = "Bearer $AccessToken"; 'Content-Type' = 'application/json' }).value 
+
+    IF (-not($apDeviceIdentatiesPost)) {
+        Write-Verbose "Device with serial number $serial is not registered."
+        $uploadRequired = $true
+    }
+    else {
+        Write-Verbose "Device with serial number $serial is already registered."
+    }
+
+    if (!$Hash -and ($uploadRequired -eq $true)) {
         # Get the common properties.
         Write-Verbose "Checking $comp"
-        $serial = (Get-CimInstance -CimSession $session -Class Win32_BIOS).SerialNumber
         # Get the hash (if available)
         $devDetail = (Get-CimInstance -CimSession $session -Namespace root/cimv2/mdm/dmmap -Class MDM_DevDetail_Ext01 -Filter "InstanceID='Ext' AND ParentID='./DevDetail'")
-        if ($devDetail)
-        {
+        if ($devDetail) {
             $hash = $devDetail.DeviceHardwareData
-        }
-        else
-        {
-            $hash = ""
         }
         Remove-CimSession $session
     }
-}
-End
-{
-    if(!($GroupTag)) {
-        $PostData = @{
-            'hardwareIdentifier' = "$hash"
-        } | ConvertTo-Json
-    } else {
-        $PostData = @{
-            'hardwareIdentifier' = "$hash"
-            'groupTag' = "$GroupTag"
-        } | ConvertTo-Json
+
+    if ($Hash) {
+        Write-Verbose "Adding the hash to the post data"
+        $PostData | Add-Member -MemberType NoteProperty -Name hardwareIdentifier -Value $Hash
     }
 
-    $Post =  Invoke-RestMethod -Method POST -Uri "https://$MSGraphHost/$MsGraphVersion/devicemanagement/importedWindowsAutopilotDeviceIdentities" -Headers @{Authorization = "Bearer $AccessToken"; 'Content-Type' = 'application/json'} -Body $PostData
-    DO {
-        Write-Host "Waiting for device import"
-        Start-Sleep 10
+    IF ($GroupTag) {
+        Write-Verbose "Checking if Group Tag is set"
+        IF ($apDeviceIdentatiesPost) {
+            IF (-not($apDeviceIdentatiesPost.groupTag -match $GroupTag)) {
+                Write-Verbose "Group Tag is not set to $GroupTag"
+                $updateGroupTag = $true
+                Write-Verbose "Adding the Group Tag to the post data"
+                $PostData | Add-Member -MemberType NoteProperty -Name groupTag -Value $GroupTag
+            }
+            ELSE {
+                Write-Verbose "The Group Tag is already set to $GroupTag"
+            }
+        }
+        ELSE {
+            Write-Verbose "Adding the Group Tag to the post data"
+            $PostData | Add-Member -MemberType NoteProperty -Name groupTag -Value $GroupTag
+        }
     }
-    UNTIL ((Invoke-RestMethod -Method Get -Uri "https://$MsGraphHost/$MsGraphVersion/Devicemanagement/importedwindowsautopilotdeviceidentities/$($Post.ID)" -Headers @{Authorization = "Bearer $AccessToken"} | Select-Object -ExpandProperty State) -NOTmatch "unknown")
-    Invoke-RestMethod -Method Get -Uri "https://$MsGraphHost/$MsGraphVersion/Devicemanagement/importedwindowsautopilotdeviceidentities/$($Post.ID)" -Headers @{Authorization = "Bearer $AccessToken"} | Select-Object -ExpandProperty State
+}
+End {
+
+    IF ($uploadRequired -eq $true) {
+        $Post = Invoke-RestMethod -Method POST -Uri "https://$MSGraphHost/$MsGraphVersion/devicemanagement/importedWindowsAutopilotDeviceIdentities" `
+            -Headers @{Authorization = "Bearer $AccessToken"; 'Content-Type' = 'application/json' } `
+            -Body ($PostData | ConvertTo-Json)
+        
+        DO {
+            Write-Host "Waiting for device import"
+            Start-Sleep 10
+        }
+        UNTIL ((Invoke-RestMethod -Method Get -Uri "https://$MsGraphHost/$MsGraphVersion/Devicemanagement/importedwindowsautopilotdeviceidentities/$($Post.ID)" -Headers @{Authorization = "Bearer $AccessToken" } | Select-Object -ExpandProperty State) -NOTmatch "unknown")
+        #Output the state of the device
+        Invoke-RestMethod -Method Get -Uri "https://$MsGraphHost/$MsGraphVersion/Devicemanagement/importedwindowsautopilotdeviceidentities/$($Post.ID)" -Headers @{Authorization = "Bearer $AccessToken" } | Select-Object -ExpandProperty State    
+    }
+    elseif ($updateGroupTag -eq $true) {
+        $Post = Invoke-RestMethod -Method POST -Uri "https://$MSGraphHost/$MsGraphVersion/devicemanagement/windowsAutopilotDeviceIdentities/$($apDeviceIdentatiesPost.id)/updateDeviceProperties" `
+            -Headers @{Authorization = "Bearer $AccessToken"; 'Content-Type' = 'application/json' } `
+            -Body ($PostData | ConvertTo-Json)
+        
+        Write-Verbose "The Group Tag for $serial has been updated to $groupTag"
+        #This action may take up to 5 minutes to show in the Intune console
+    }
 }
