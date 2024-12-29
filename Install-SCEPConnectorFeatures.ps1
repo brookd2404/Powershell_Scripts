@@ -116,4 +116,4 @@ $featureSplat = @{
     )
 }
 
-Install-WindowsFeature @featureSplat
+Add-WindowsFeature @featureSplat
