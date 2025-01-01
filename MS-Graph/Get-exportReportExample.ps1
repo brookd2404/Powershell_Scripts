@@ -48,7 +48,7 @@ do
 
 #Download the report
 $netClient = [System.Net.WebClient]::new()
-$destination = "C:\temp\$($reportRequest.id).csv"
+$destination = "C:\temp\$($reportRequest.id).zip"
 
 #If the folder does not exist, create it
 if (-not (Test-Path (Split-Path $destination)))
