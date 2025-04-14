@@ -31,8 +31,11 @@ Assign permissions to a user-assigned managed identity:
 .NOTES
 Author: David Brook
 Date: 2025-04-14
-version: 1.0
+version: 1.1
 
+Changes:
+    1.0 - Initial version
+    1.1 - Added error handling and logging for better debugging.
 #>
 
 param (
@@ -44,23 +47,51 @@ param (
     [string[]]$perms
 )
 
-Connect-AzAccount -Subscription $subscriptionId
-
-switch ($MIType) {
-    SystemAssigned {
-        $resource = Get-AzResource -ResourceGroupName $resourceGroupName -Name $resourceName
-        $servicePrincipal = Get-AzADServicePrincipal -ObjectId $resource.Identity.PrincipalId
-    }
-    UserManaged {
-        $identity = Get-AzUserAssignedIdentity -ResourceGroupName "<your-rg-name>" -Name "<identity-name>"
-        $servicePrincipal = Get-AzADServicePrincipal -ObjectId $identity.PrincipalId
-
-    }
+try {
+    Write-Output "Connecting to Azure account with subscription ID: $subscriptionId"
+    Connect-AzAccount -Subscription $subscriptionId
+    Write-Output "Successfully connected to Azure account."
+} catch {
+    Write-Output "Error connecting to Azure account: $_"
+    throw
 }
 
-$graphAPISP = Get-AzADServicePrincipal -DisplayName "Microsoft Graph"
+try {
+    switch ($MIType) {
+        SystemAssigned {
+            Write-Output "Fetching system-assigned managed identity for resource: $resourceName in resource group: $resourceGroupName"
+            $resource = Get-AzResource -ResourceGroupName $resourceGroupName -Name $resourceName
+            $servicePrincipal = Get-AzADServicePrincipal -ObjectId $resource.Identity.PrincipalId
+            Write-Output "Successfully retrieved system-assigned managed identity."
+        }
+        UserManaged {
+            Write-Output "Fetching user-assigned managed identity for resource: $resourceName in resource group: $resourceGroupName"
+            $identity = Get-AzUserAssignedIdentity -ResourceGroupName $resourceGroupName -Name $resourceName
+            $servicePrincipal = Get-AzADServicePrincipal -ObjectId $identity.PrincipalId
+            Write-Output "Successfully retrieved user-assigned managed identity."
+        }
+    }
+} catch {
+    Write-Output "Error retrieving managed identity: $_"
+    throw
+}
+
+try {
+    Write-Output "Fetching Microsoft Graph service principal."
+    $graphAPISP = Get-AzADServicePrincipal -DisplayName "Microsoft Graph"
+    Write-Output "Successfully retrieved Microsoft Graph service principal."
+} catch {
+    Write-Output "Error retrieving Microsoft Graph service principal: $_"
+    throw
+}
 
 foreach ($perm in $perms) {
-    $roleId = ($graphAPISp.AppRoles | Where-Object { $_.Value -eq $perm }).Id
-   New-AzADServiceAppRoleAssignment -PrincipalId $servicePrincipal.Id -ResourceId $graphAPISP.Id -AppRoleId $roleId
+    try {
+        Write-Output "Assigning permission '$perm' to the managed identity."
+        $roleId = ($graphAPISP.AppRoles | Where-Object { $_.Value -eq $perm }).Id
+        New-AzADServiceAppRoleAssignment -PrincipalId $servicePrincipal.Id -ResourceId $graphAPISP.Id -AppRoleId $roleId
+        Write-Output "Successfully assigned permission '$perm'."
+    } catch {
+        Write-Output "Error assigning permission '$perm': $_"
+    }
 }
