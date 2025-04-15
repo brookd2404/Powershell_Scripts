@@ -1,76 +1,54 @@
 <#
 .SYNOPSIS
-Assigns Microsoft Graph API permissions to a managed identity in Azure.
+Assigns Microsoft Graph API permissions to a managed identity in Entra.
 
 .DESCRIPTION
-This script assigns specified Microsoft Graph API permissions to either a system-assigned or user-assigned managed identity in Azure. It connects to the Azure account, retrieves the service principal for the managed identity, and assigns the required permissions.
-
-.PARAMETER MIType
-Specifies the type of managed identity. Valid values are "SystemAssigned" or "UserManaged".
-
-.PARAMETER subscriptionId
-The subscription ID where the managed identity resides.
+This script assigns specified Microsoft Graph API permissions to either a system-assigned or user-assigned managed identity in Entra. It connects to the Microsoft Graph, retrieves the service principal for the managed identity, and assigns the required permissions.
 
 .PARAMETER resourceName
-The name of the resource associated with the managed identity.
+The name of the managed identity.
 
-.PARAMETER resourceGroupName
-The name of the resource group containing the resource.
-
-.PARAMETER perms
+.PARAMETER permissions
 An array of Microsoft Graph API permissions to assign to the managed identity.
 
 .EXAMPLE
-Assign permissions to a system-assigned managed identity:
-.\Configure-ManagedIdentityPermission.ps1 -MIType SystemAssigned -subscriptionId "12345-abcde-67890" -resourceName "myResource" -resourceGroupName "myResourceGroup" -perms @("User.Read", "Group.Read.All")
-
-.EXAMPLE
-Assign permissions to a user-assigned managed identity:
-.\Configure-ManagedIdentityPermission.ps1 -MIType UserManaged -subscriptionId "12345-abcde-67890" -resourceName "myResource" -resourceGroupName "myResourceGroup" -perms @("User.Read", "Group.Read.All")
+Assign permissions to a managed identity:
+.\Configure-ManagedIdentityPermission.ps1 -resourceName "myResource" -permissions @("User.Read", "Group.Read.All")
 
 .NOTES
 Author: David Brook
-Date: 2025-04-14
-version: 1.1
+Date: 2025-04-15
+version: 1.2
 
 Changes:
     1.0 - Initial version
     1.1 - Added error handling and logging for better debugging.
+    1.2 - Updated to use Microsoft.Graph PowerShell modules.
 #>
 
 param (
-    [ValidateSet("SystemAssigned", "UserManaged")]
-    [string]$MIType,
     [string]$subscriptionId,
     [string]$resourceName,
-    [string]$resourceGroupName,
-    [string[]]$perms
+    [array]$permissions
 )
 
 try {
-    Write-Output "Connecting to Azure account with subscription ID: $subscriptionId"
-    Connect-AzAccount -Subscription $subscriptionId
+    Write-Output "Connecting to the Microsoft Graph API..."
+    Connect-MgGraph -Scopes "Application.ReadWrite.All", "AppRoleAssignment.ReadWrite.All", "Directory.Read.All" -NoWelcom
     Write-Output "Successfully connected to Azure account."
 } catch {
-    Write-Output "Error connecting to Azure account: $_"
+    Write-Output "Error connecting to the Microsoft Graph API"
     throw
 }
 
 try {
-    switch ($MIType) {
-        SystemAssigned {
-            Write-Output "Fetching system-assigned managed identity for resource: $resourceName in resource group: $resourceGroupName"
-            $resource = Get-AzResource -ResourceGroupName $resourceGroupName -Name $resourceName
-            $servicePrincipal = Get-AzADServicePrincipal -ObjectId $resource.Identity.PrincipalId
-            Write-Output "Successfully retrieved system-assigned managed identity."
-        }
-        UserManaged {
-            Write-Output "Fetching user-assigned managed identity for resource: $resourceName in resource group: $resourceGroupName"
-            $identity = Get-AzUserAssignedIdentity -ResourceGroupName $resourceGroupName -Name $resourceName
-            $servicePrincipal = Get-AzADServicePrincipal -ObjectId $identity.PrincipalId
-            Write-Output "Successfully retrieved user-assigned managed identity."
-        }
+    Write-Output "Fetching managed identity with name: $resourceName"
+    $servicePrincipal = Get-MgServicePrincipal -Filter "displayName eq '$resourceName'"
+    if ($null -eq $servicePrincipal) {
+        Write-Output "Managed identity '$resourceName' not found."
+        throw "Managed identity '$resourceName' not found."
     }
+    Write-Output "Successfully retrieved managed identity."
 } catch {
     Write-Output "Error retrieving managed identity: $_"
     throw
@@ -78,19 +56,36 @@ try {
 
 try {
     Write-Output "Fetching Microsoft Graph service principal."
-    $graphAPISP = Get-AzADServicePrincipal -DisplayName "Microsoft Graph"
+    $graphAPISP = Get-MgServicePrincipal -Filter "displayName eq 'Microsoft Graph'"
     Write-Output "Successfully retrieved Microsoft Graph service principal."
 } catch {
     Write-Output "Error retrieving Microsoft Graph service principal: $_"
     throw
 }
 
-foreach ($perm in $perms) {
+#Get Existing AppRoleAssignments
+$existingAssignment = Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $servicePrincipal.Id 
+foreach ($perm in $permissions) {
     try {
         Write-Output "Assigning permission '$perm' to the managed identity."
-        $roleId = ($graphAPISP.AppRoles | Where-Object { $_.Value -eq $perm }).Id
-        New-AzADServiceAppRoleAssignment -PrincipalId $servicePrincipal.Id -ResourceId $graphAPISP.Id -AppRoleId $roleId
-        Write-Output "Successfully assigned permission '$perm'."
+        $roleId = ($graphAPISP.AppRoles | Where-Object { $_.Value -eq $perm -and $_.AllowedMemberTypes -contains "Application" }).Id
+        if ($null -eq $roleId) {
+            Write-Output "Permission '$perm' not found in Microsoft Graph API."
+            throw "Permission '$perm' not found in Microsoft Graph API."
+        }
+        #Check if the permission is already assigned
+        if ($existingAssignment.AppRoleId -contains $roleId) {
+            Write-Output "Permission '$perm' is already assigned to the managed identity."
+        } else {
+            $permissionSplat = @{
+                ServicePrincipalId = $servicePrincipal.Id
+                ResourceId         = $graphAPISP.Id
+                AppRoleId          = $roleId
+                PrincipalId        = $servicePrincipal.id
+            }
+            New-MgServicePrincipalAppRoleAssignment @permissionSplat -ErrorAction Continue | Out-Null
+            Write-Output "Successfully assigned permission '$perm'."
+        }
     } catch {
         Write-Output "Error assigning permission '$perm': $_"
     }
